@@ -7,11 +7,12 @@ Modèle physique :
 - Nombre de Reynolds Re = rho * v * L / mu, avec L la taille caractéristique saisie
   par l'utilisateur (diamètre pour la sphère/le cylindre, côté pour le cube/la
   plaque, longueur pour le profilé).
-- Coefficient de traînée Cx(Re) par forme, à partir de courbes standards de la
-  littérature (interpolation log-log entre points documentés). Sphère et cylindre
-  reproduisent la "crise de traînée" autour de Re ~ 3.10^5 ; cube, plaque et
-  profilé sont représentés par un plateau quasi constant à grand Re, conforme aux
-  tables usuelles de mécanique des fluides (voir la section "Sources" dans l'appli).
+- Coefficient de traînée Cx(Re) par forme. Sphère : corrélation exacte de Morrison
+  (2013), valable en continu et reproduisant la crise de traînée vers Re ~ 2-3.10^5.
+  Cylindre : corrélation de Sucker & Brauer (1975) avant la crise de traînée
+  (Re <= 2.10^5), puis table approximative de secours au-delà. Cube, plaque et
+  profilé : table de points (Re, Cx) documentés interpolée en log-log, plateau
+  quasi constant à grand Re (voir la section "Sources" dans l'appli).
 - Force de traînée F = 0.5 * rho * v^2 * Cx * A.
 
 C'est une première version avec des approximations documentées mais simplifiées :
@@ -61,23 +62,15 @@ def air_viscosity(temp_k: float) -> float:
 # ----------------------------------------------------------------------------
 # Coefficients de traînée Cx(Re) par forme
 #
-# Chaque forme est définie par une table de points (Re, Cx) documentés,
-# interpolés linéairement en échelle log-log et prolongés en constante au-delà
-# des bornes. C'est une approximation volontairement simple : ajuster les
-# tables ci-dessous pour affiner le modèle par la suite.
+# Cube, plaque et profilé : approximation volontairement simple par table de
+# points (Re, Cx) documentés, interpolés en log-log et prolongés en constante
+# au-delà des bornes — aucune corrélation continue fiable et précisément
+# sourcée n'a été trouvée pour ces formes (comportement de secours conservé).
+#
+# Sphère et cylindre : remplacés par de vraies corrélations Cx(Re) publiées
+# (voir cd_sphere_morrison et cd_cylinder ci-dessous), au lieu d'une simple
+# table de quelques points.
 # ----------------------------------------------------------------------------
-
-SPHERE_PTS = [
-    (1e-1, 240), (1, 27), (10, 4.3), (1e2, 1.1), (1e3, 0.47),
-    (1e4, 0.47), (1e5, 0.5), (2e5, 0.5), (3e5, 0.09),  # crise de traînée
-    (5e5, 0.13), (1e6, 0.2), (1e7, 0.2),
-]
-
-CYLINDER_PTS = [
-    (1e-1, 100), (1, 10), (10, 2.8), (1e2, 1.4), (1e3, 1.2),
-    (1e4, 1.2), (1e5, 1.2), (2e5, 1.1), (3e5, 0.3),  # crise de traînée
-    (5e5, 0.35), (1e6, 0.7), (1e7, 0.7),
-]
 
 CUBE_PTS = [
     (1e-1, 240), (1, 24), (10, 5), (1e2, 1.6), (1e3, 1.05), (1e7, 1.05),
@@ -102,6 +95,66 @@ def cd_from_table(re: float, points: list[tuple[float, float]]) -> float:
     return float(10 ** np.interp(lr, log_re, log_cd))
 
 
+def cd_sphere_morrison(re: float) -> float:
+    """Cx d'une sphère lisse : corrélation exacte de Morrison (2013), valable en continu
+    de l'écoulement de Stokes jusqu'à Re ≈ 10^6 (elle reproduit fidèlement la crise de
+    traînée vers Re ≈ 2-3.10^5). Au-delà de 10^6, l'auteur déconseille l'usage de la
+    formule ; on gèle alors la valeur obtenue à Re=10^6 (comportement de secours).
+
+    Source : F. A. Morrison, "An Introduction to Fluid Mechanics", Cambridge University
+    Press, 2013, Figure 8.13, p. 625 — reproduite dans F. A. Morrison, "Data Correlation
+    for Drag Coefficient for Sphere", Dept. of Chemical Engineering, Michigan Technological
+    University, 10 nov. 2016 (chem.mtu.edu/~fmorriso/DataCorrelationForSphereDrag2016.pdf),
+    elle-même calée sur les données expérimentales de H. Schlichting, "Boundary Layer
+    Theory", McGraw-Hill, 1955.
+    """
+    re = min(max(re, 1e-3), 1e6)
+    return (
+        24 / re
+        + 2.6 * (re / 5.0) / (1 + (re / 5.0) ** 1.52)
+        + 0.411 * (re / 2.63e5) ** (-7.94) / (1 + (re / 2.63e5) ** (-8.00))
+        + 0.25 * (re / 1e6) / (1 + re / 1e6)
+    )
+
+
+def cd_cylinder_sucker_brauer(re: float) -> float:
+    """Cx d'un cylindre circulaire lisse en écoulement transverse : corrélation de
+    Sucker & Brauer (1975), valable avant la crise de traînée (jusqu'à Re ≈ 2.10^5).
+
+    Source : D. Sucker, H. Brauer, "Investigation of the flow around transverse
+    cylinders", Wärme- und Stoffübertragung, 1975, vol. 8, p. 149-158. Formule (Eq. 4)
+    reproduite dans H. A. Elghannay, Y. M. F. El Hasadi, "Development of Drag Coefficient
+    Correlations for Circular Cylinder Using Turingbot Symbolic Regression Software",
+    Al-Mukhtar Journal of Engineering Research, 2023, 7(1):20-28,
+    https://doi.org/10.54172/wadd2q70 — qui la cite elle-même via F. M. White,
+    J. Majdalani, "Viscous Fluid Flow", 3e éd., McGraw-Hill, 2006.
+    """
+    re = max(re, 0.05)
+    return 1.18 + 6.8 / re**0.89 + 1.96 / re**0.5 - 0.0004 * re / (1 + 3.63e-7 * re**2)
+
+
+CYLINDER_RE_CRISIS = 2e5  # limite de validité documentée de Sucker & Brauer (avant crise)
+
+# Au-delà de la crise de traînée, aucune corrélation fiable et précisément sourcée n'a
+# été trouvée : on relaie sur une table approximative (comportement de secours), raccordée
+# sans discontinuité à la valeur de Sucker & Brauer au point de bascule.
+CYLINDER_HIGH_RE_PTS = [
+    (CYLINDER_RE_CRISIS, cd_cylinder_sucker_brauer(CYLINDER_RE_CRISIS)),
+    (3e5, 0.3),  # crise de traînée (comportement qualitatif documenté, valeur approximative)
+    (5e5, 0.35),
+    (1e6, 0.7),
+    (1e7, 0.7),
+]
+
+
+def cd_cylinder(re: float) -> float:
+    """Cx cylindre : Sucker & Brauer avant la crise de traînée documentée (Re ≤ 2.10^5),
+    puis table approximative de secours au-delà (crise + régime supercritique)."""
+    if re <= CYLINDER_RE_CRISIS:
+        return cd_cylinder_sucker_brauer(re)
+    return cd_from_table(re, CYLINDER_HIGH_RE_PTS)
+
+
 # ----------------------------------------------------------------------------
 # Formes : fonction Cx(Re), aire frontale A(L), description, source
 # ----------------------------------------------------------------------------
@@ -117,19 +170,23 @@ def frontal_area_square(l: float) -> float:
 
 SHAPES = {
     "Sphère": {
-        "cd": lambda re: cd_from_table(re, SPHERE_PTS),
+        "cd": cd_sphere_morrison,
         "area": frontal_area_disk,
         "taille": "diamètre",
-        "source": "Courbe standard de traînée d'une sphère lisse (crise de traînée vers Re ≈ 3.10⁵), "
-        "valeurs usuelles de la littérature (ex. Schlichting, Munson et al.).",
+        "source": "Corrélation exacte de Morrison (2013), valable en continu de Re≈10⁻³ à 10⁶ "
+        "et reproduisant la crise de traînée vers Re≈2-3.10⁵ — F.A. Morrison, "
+        "\"An Introduction to Fluid Mechanics\", Cambridge University Press, 2013, Fig. 8.13 "
+        "p.625, calée sur les données de Schlichting (1955).",
     },
     "Cylindre (travers du flux)": {
-        "cd": lambda re: cd_from_table(re, CYLINDER_PTS),
+        "cd": cd_cylinder,
         "area": frontal_area_square,
         "taille": "diamètre (longueur supposée égale)",
-        "source": "Courbe standard de traînée d'un cylindre circulaire en écoulement transverse "
-        "(crise de traînée similaire à la sphère, valeurs approximatives d'après Roshko 1961 "
-        "et tables usuelles).",
+        "source": "Corrélation de Sucker & Brauer (1975) avant la crise de traînée (Re≤2.10⁵) — "
+        "D. Sucker, H. Brauer, Wärme- und Stoffübertragung, 1975, vol. 8, p.149-158 "
+        "(reproduite dans Elghannay & El Hasadi 2023, doi.org/10.54172/wadd2q70). "
+        "Au-delà (crise + régime supercritique), table approximative de secours faute de "
+        "corrélation fiable trouvée dans cette zone.",
     },
     "Cube": {
         "cd": lambda re: cd_from_table(re, CUBE_PTS),
@@ -398,7 +455,7 @@ def elongation_wake_params(elong: float):
 def cd_elongation(elong: float, re: float) -> float:
     """Cx interpolé (log-log) entre les 3 formes documentées, à l'élancement `elong`."""
     cd_disk = cd_from_table(re, PLATE_PTS)
-    cd_sphere = cd_from_table(re, SPHERE_PTS)
+    cd_sphere = cd_sphere_morrison(re)
     cd_streamlined = cd_from_table(re, STREAMLINED_PTS)
     anchors = list(zip(ELONG_ANCHORS, [cd_disk, cd_sphere, cd_streamlined]))
     return cd_from_table(elong, anchors)
@@ -679,8 +736,11 @@ with st.expander("📚 Sources et limites du modèle"):
         "(101 325 Pa), altitude non prise en compte.\n"
         "- **Viscosité** : loi de Sutherland pour l'air.\n"
         "- **Nombre de Reynolds** : Re = ρ·v·L/µ, avec L la taille caractéristique saisie.\n"
-        "- **Coefficients de traînée** : interpolés à partir de tables de points "
-        "(Re, Cx) documentées, différentes pour chaque forme :\n"
+        "- **Coefficients de traînée** : la **sphère** et le **cylindre** (avant sa crise de "
+        "traînée) utilisent de vraies corrélations Cx(Re) publiées ; le **cube**, la "
+        "**plaque** et le **profilé** (et le cylindre après sa crise de traînée) utilisent "
+        "une table de points (Re, Cx) documentés interpolée en log-log, faute de "
+        "corrélation continue fiable et précisément sourcée trouvée pour ces cas :\n"
     )
     for nom, s in SHAPES.items():
         st.markdown(f"  - **{nom}** ({s['taille']}) : {s['source']}")
@@ -689,13 +749,15 @@ with st.expander("📚 Sources et limites du modèle"):
         "toutes les formes utilisent une aire frontale L² (carré/cube englobant), sauf la "
         "sphère qui utilise l'aire réelle d'un disque π/4·L². Cela permet d'isoler l'effet "
         "du **Cx** (forme) plutôt que de simplement comparer des tailles différentes.\n"
-        "- **Limites connues** : le comportement à bas Reynolds (< 1000) pour le cube, la "
-        "plaque et le profilé est une approximation simplifiée, non issue de mesures "
-        "précises ; le cylindre est traité comme ayant une longueur égale à son diamètre. "
-        "Ces points seront affinés dans une prochaine version.\n"
+        "- **Limites connues** : le comportement à bas Reynolds (< 1000) pour le cube et la "
+        "plaque, et à tout Re pour le profilé, reste une approximation simplifiée, non issue "
+        "de mesures précises ; le cylindre est traité comme ayant une longueur égale à son "
+        "diamètre, et sa zone post-crise de traînée reste une table approximative faute de "
+        "corrélation fiable trouvée. Ces points seront affinés dans une prochaine version.\n"
         "- **Explorateur d'élancement** : le Cx y est interpolé (log-log, sur l'axe "
         "élancement) entre les 3 mêmes valeurs documentées listées ci-dessus pour le "
-        "disque/la plaque, la sphère et le profilé — aucune nouvelle donnée mesurée n'est "
-        "utilisée. Les élancements intermédiaires ne correspondent pas à des essais "
-        "réels ; c'est une approximation à affiner avec des données de soufflerie/CFD."
+        "disque/la plaque, la sphère (corrélation de Morrison) et le profilé — aucune "
+        "nouvelle donnée mesurée n'est utilisée. Les élancements intermédiaires ne "
+        "correspondent pas à des essais réels ; c'est une approximation à affiner avec des "
+        "données de soufflerie/CFD."
     )
