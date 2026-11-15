@@ -20,7 +20,7 @@ L'application calcule ensuite :
 4. La force de traînée : `F = 0,5 · ρ · v² · Cx · A`, et la puissance nécessaire `P = F · v`.
 5. Un graphique comparatif, avec la forme la plus aérodynamique mise en avant.
 
-Formes comparées : sphère, cylindre, cube, plaque plate, profilé en goutte d'eau. L'aire frontale est fixée à L² pour toutes les formes, afin de comparer à taille égale.
+Formes comparées : sphère, cylindre, cube, plaque plate, profilé en goutte d'eau. L'aire frontale est fixée à L² pour toutes les formes sauf la sphère (π/4 · L²), afin de comparer à taille égale.
 
 ## Visualisation de l'écoulement
 
@@ -55,18 +55,18 @@ Python 3.10 ou plus récent est recommandé.
 ```
 git clone https://github.com/Therm26/forme-aerodynamique.git
 cd forme-aerodynamique
-pip install streamlit numpy matplotlib
+pip install -r requirements.txt
 streamlit run app.py
 ```
 
-L'application s'ouvre sur `http://localhost:8501`. Si un fichier `requirements.txt` est présent dans le dépôt, utilise `pip install -r requirements.txt` à la place.
+L'application s'ouvre sur `http://localhost:8501`.
 
 ## Limites connues
 
 - Pas de simulation numérique de l'écoulement : les visualisations sont pédagogiques.
 - Trois formes sur cinq reposent sur des valeurs de Cx approximatives.
 - Le Cx de l'explorateur d'élancement est interpolé à partir de trois points seulement.
-- L'aire frontale est supposée égale à L² pour toutes les formes, ce qui n'est pas la vraie aire de la sphère ou du cylindre.
+- L'aire frontale est prise égale à L² pour toutes les formes sauf la sphère, par simplification.
 - L'air est le seul fluide géré, à pression atmosphérique standard.
 
 ## Pistes d'amélioration
